@@ -1,1 +1,146 @@
 
+# yamllint disable-line rule:document-start
+name: deploy
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_call:
+    inputs:
+      BEDROCK_DEPLOY_BRANCH:
+        type: string
+        default: "${{ github.ref_name }}"
+        required: false
+      NODE_VERSION:
+        type: number
+        default: 14
+        required: false
+      THEME_NAME:
+        type: string
+        default: ""
+        required: false
+      TRELLIS_ENVIRONMENT:
+        type: string
+        required: true
+      TRELLIS_REPOSITORY:
+        type: string
+        required: true
+      TRELLIS_CLI_AUTO_INIT:
+        type: boolean
+        default: true
+        required: false
+      TRELLIS_CLI_CACHE_VIRTUALENV:
+        type: boolean
+        default: true
+        required: false
+      TRELLIS_CLI_GALAXY_INSTALL:
+        type: boolean
+        default: true
+        required: false
+      TRELLIS_CLI_VERSION:
+        type: string
+        default: latest
+        required: false
+    secrets:
+      REPO_PAT:
+        required: true
+      TRELLIS_DEPLOY_SSH_PRIVATE_KEY:
+        required: true
+      TRELLIS_DEPLOY_SSH_KNOWN_HOSTS:
+        required: true
+      ANSIBLE_VAULT_PASSWORD:
+        required: true
+      FONTAWESOME_NPM_AUTH_TOKEN:
+        required: false
+      ITINERIS_NPM_AUTH_TOKEN:
+        required: false
+      ZEROTIER_CENTRAL_TOKEN:
+        required: true
+      ZEROTIER_GATEWAY_IP:
+        required: true
+      ZEROTIER_NETWORK_ID:
+        required: true
+
+jobs:
+  deploy:
+    name: "${{ inputs.TRELLIS_ENVIRONMENT }}"
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: "${{ github.workflow }}-${{ github.ref_name }}"
+      cancel-in-progress: false
+    if: github.sha != vars.LAST_DEPLOY && github.actor != 'kodiakhq[bot]' && github.actor != 'dependabot[bot]' && !contains(github.event.head_commit.message, '[cd skip]')
+    steps:
+      - name: Checkout Trellis
+        uses: actions/checkout@v4
+        with:
+          repository: "${{ inputs.TRELLIS_REPOSITORY }}"
+          path: trellis
+          token: "${{ secrets.REPO_PAT }}"
+
+      - name: Get environment IP address
+        run: |
+          HOST_IP="$(grep -Po 'ansible_host=((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_host=//g')"
+          if [ -z "${HOST_IP}" ]; then
+            echo 'HOST_IP not found.'
+            exit 1
+          fi
+          echo "HOST_IP=${HOST_IP}" >> "${GITHUB_ENV}"
+        working-directory: trellis
+
+      - name: Checkout Bedrock
+        uses: actions/checkout@v4
+        with:
+          path: bedrock
+
+      - name: Setup Node ${{ inputs.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        if: "${{ inputs.THEME_NAME != '' }}"
+        with:
+          node-version: "${{ inputs.NODE_VERSION }}"
+          cache: yarn
+          # yamllint disable-line rule:line-length
+          cache-dependency-path: bedrock/web/app/themes/${{ inputs.THEME_NAME }}/yarn.lock
+        env:
+          # yamllint disable-line rule:line-length
+          FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
+
+      - uses: shimataro/ssh-key-action@v2
+        with:
+          key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
+          known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
+
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
+
+      - uses: roots/setup-trellis-cli@v1.3.1
+        with:
+          ansible-vault-password: "${{ secrets.ANSIBLE_VAULT_PASSWORD }}"
+          auto-init: "${{ inputs.TRELLIS_CLI_AUTO_INIT }}"
+          cache-virtualenv: "${{ inputs.TRELLIS_CLI_CACHE_VIRTUALENV }}"
+          galaxy-install: "${{ inputs.TRELLIS_CLI_GALAXY_INSTALL }}"
+          version: "${{ inputs.TRELLIS_CLI_VERSION }}"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Trellis CLI
+        run: |
+          mkdir -p ~/.trellis-cli
+          echo "allow_development_deploys: true" > ~/.trellis-cli/config.yml
+
+      - name: Deploy
+        working-directory: trellis
+        # yamllint disable-line rule:line-length
+        run: trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
+        env:
+          # yamllint disable-line rule:line-length
+          FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
+          ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
+          ALLOW_DEVELOPMENT_DEPLOYS: true
+
+      - name: Cache deployed commit hash
+        run: gh variable set LAST_DEPLOY --body='${{ github.sha }}'
+        working-directory: bedrock
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_PAT }}
