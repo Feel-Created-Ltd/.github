@@ -124,6 +124,7 @@ jobs:
       - name: Add optional Bedrock deploy key
         run: |
           if [ -n "${TRELLIS_BEDROCK_SSH_PRIVATE_KEY}" ]; then
+            echo "this has run"
             echo "${TRELLIS_BEDROCK_SSH_PRIVATE_KEY}" > /tmp/bedrock_key
             chmod 600 /tmp/bedrock_key
             ssh-add /tmp/bedrock_key
