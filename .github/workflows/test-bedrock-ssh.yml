@@ -1,0 +1,25 @@
+name: Test Bedrock SSH Key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-ssh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup SSH agent with Bedrock key
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}
+
+      - name: List loaded SSH keys
+        run: ssh-add -l
+
+      - name: Test SSH connection to GitHub
+        run: ssh -T git@github.com || true
+
+      - name: Attempt to clone Bedrock repo
+        run: |
+          git clone --branch development git@github.com:Feel-Created-Ltd/www.chi.ac.uk-bedrock.git /tmp/bedrock-test
+          ls -la /tmp/bedrock-test
