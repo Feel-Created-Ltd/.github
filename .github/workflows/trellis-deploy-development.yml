@@ -1,151 +1,57 @@
 # yamllint disable-line rule:document-start
-name: deploy
+name: cd
 
 on:
-  workflow_call:
-    inputs:
-      BEDROCK_DEPLOY_BRANCH:
-        type: string
-        default: "${{ github.ref_name }}"
-        required: false
-      NODE_VERSION:
-        type: number
-        default: 14
-        required: false
-      THEME_NAME:
-        type: string
-        default: ""
-        required: false
-      TRELLIS_ENVIRONMENT:
-        type: string
-        required: true
-      TRELLIS_REPOSITORY:
-        type: string
-        required: true
-      TRELLIS_CLI_AUTO_INIT:
-        type: boolean
-        default: true
-        required: false
-      TRELLIS_CLI_CACHE_VIRTUALENV:
-        type: boolean
-        default: true
-        required: false
-      TRELLIS_CLI_GALAXY_INSTALL:
-        type: boolean
-        default: true
-        required: false
-      TRELLIS_CLI_VERSION:
-        type: string
-        default: latest
-        required: false
-    secrets:
-      REPO_PAT:
-        required: true
-      TRELLIS_DEPLOY_SSH_PRIVATE_KEY:
-        required: true
-      TRELLIS_BEDROCK_SSH_PRIVATE_KEY:
-        required: false
-      TRELLIS_DEPLOY_SSH_KNOWN_HOSTS:
-        required: true
-      ANSIBLE_VAULT_PASSWORD:
-        required: true
-      FONTAWESOME_NPM_AUTH_TOKEN:
-        required: false
-      ITINERIS_NPM_AUTH_TOKEN:
-        required: false
-      ZEROTIER_CENTRAL_TOKEN:
-        required: true
-      ZEROTIER_GATEWAY_IP:
-        required: true
-      ZEROTIER_NETWORK_ID:
-        required: true
+  workflow_dispatch:
+  push:
+    branches:
+      - development
+  schedule:
+    - cron: "0 10 * * 1,2,3,4,5"
 
 jobs:
   deploy:
-    name: "${{ inputs.TRELLIS_ENVIRONMENT }}"
-    runs-on: ubuntu-latest
-    concurrency:
-      group: "${{ github.workflow }}-${{ github.ref_name }}"
-      cancel-in-progress: false
-    if: github.sha != vars.LAST_DEPLOY && github.actor != 'kodiakhq[bot]' && github.actor != 'dependabot[bot]' && !contains(github.event.head_commit.message, '[cd skip]')
+    uses: Feel-Created-Ltd/.github/.github/workflows/trellis-deploy-development.yml@main
+    with:
+      NODE_VERSION: 12
+      THEME_NAME: chiuni
+      TRELLIS_ENVIRONMENT: "dev-remote"
+      TRELLIS_REPOSITORY: Feel-Created-Ltd/www.chi.ac.uk-trellis
+    secrets:
+      REPO_PAT: ${{ secrets.REPO_PAT }}
+      TRELLIS_DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}
+      TRELLIS_DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}
+      TRELLIS_BEDROCK_SSH_PRIVATE_KEY: ${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}
+      ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+      FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
+      ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
+      ZEROTIER_CENTRAL_TOKEN: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
+      ZEROTIER_GATEWAY_IP: ${{ secrets.ZEROTIER_GATEWAY_IP }}
+      ZEROTIER_NETWORK_ID: ${{ secrets.ZEROTIER_NETWORK_ID }}
 
+  check_ip:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Trellis
         uses: actions/checkout@v4
         with:
-          repository: "${{ inputs.TRELLIS_REPOSITORY }}"
+          repository: Feel-Created-Ltd/www.chi.ac.uk-trellis
+          ref: development
           path: trellis
-          token: "${{ secrets.REPO_PAT }}"
+          token: ${{ secrets.REPO_PAT }}
 
-      - name: Get environment IP address
+      - name: Check hosts/dev-remote for correct IP
         run: |
-          HOST_IP="$(grep -Eo 'ansible_host=[0-9]{1,3}(\.[0-9]{1,3}){3}' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_host=//g')"
-          if [ -z "${HOST_IP}" ]; then
-            echo 'HOST_IP not found.'
+          EXPECTED_IP="35.246.17.50"
+          ACTUAL_IP=$(grep -Eo 'ansible_host=[0-9]{1,3}(\.[0-9]{1,3}){3}' trellis/hosts/dev-remote | sed 's/ansible_host=//g')
+          if [ "$ACTUAL_IP" != "$EXPECTED_IP" ]; then
+            echo "Error: IP in hosts/dev-remote ($ACTUAL_IP) does not match expected ($EXPECTED_IP)"
             exit 1
           fi
-          echo "HOST_IP=${HOST_IP}" >> "${GITHUB_ENV}"
-        working-directory: trellis
+          echo "IP address in hosts/dev-remote is correct: $ACTUAL_IP"
 
-      - name: Checkout Bedrock
-        uses: actions/checkout@v4
+      - name: Setup Bedrock SSH key
+        if: ${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY != '' }}
+        uses: webfactory/ssh-agent@v0.9.1
         with:
-          path: bedrock
-
-      - name: Setup Node ${{ inputs.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        if: "${{ inputs.THEME_NAME != '' }}"
-        with:
-          node-version: "${{ inputs.NODE_VERSION }}"
-          cache: yarn
-          cache-dependency-path: bedrock/web/app/themes/${{ inputs.THEME_NAME }}/yarn.lock
-        env:
-          FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
-
-      - name: Add Trellis deploy key
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
-          known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
-
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
-
-      - name: Add optional Bedrock deploy key
-        run: |
-          if [ -n "${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}" ]; then
-            echo "${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}" > /tmp/bedrock_key
-            chmod 600 /tmp/bedrock_key
-            ssh-add /tmp/bedrock_key
-          fi
-
-      - uses: roots/setup-trellis-cli@v1.3.1
-        with:
-          ansible-vault-password: "${{ secrets.ANSIBLE_VAULT_PASSWORD }}"
-          auto-init: "${{ inputs.TRELLIS_CLI_AUTO_INIT }}"
-          cache-virtualenv: "${{ inputs.TRELLIS_CLI_CACHE_VIRTUALENV }}"
-          galaxy-install: "${{ inputs.TRELLIS_CLI_GALAXY_INSTALL }}"
-          version: "${{ inputs.TRELLIS_CLI_VERSION }}"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure Trellis CLI
-        run: |
-          mkdir -p ~/.trellis-cli
-          echo "allow_development_deploys: true" > ~/.trellis-cli/config.yml
-
-      - name: Deploy
-        working-directory: trellis
-        run: trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
-        env:
-          FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
-          ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
-          ALLOW_DEVELOPMENT_DEPLOYS: true
-
-      - name: Cache deployed commit hash
-        run: gh variable set LAST_DEPLOY --body='${{ github.sha }}'
-        working-directory: bedrock
-        env:
-          GITHUB_TOKEN: ${{ secrets.REPO_PAT }}
+          ssh-private-key: ${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}
