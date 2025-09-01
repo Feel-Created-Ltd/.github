@@ -103,9 +103,6 @@ jobs:
           FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
-      
-      - name: Test SSH access to Bedrock repo
-        run: ssh -T git@github.com
 
       - name: Add Trellis deploy key
         uses: shimataro/ssh-key-action@v2
@@ -113,17 +110,11 @@ jobs:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
           known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
 
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
-
       - name: Add optional Bedrock deploy key
-        run: |
-          if [ -n "${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}" ]; then
-            echo "${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}" > /tmp/bedrock_key
-            chmod 600 /tmp/bedrock_key
-            ssh-add /tmp/bedrock_key
-          fi
+        if: ${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY != '' }}
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}
 
       - uses: roots/setup-trellis-cli@v1.3.1
         with:
