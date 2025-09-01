@@ -103,6 +103,9 @@ jobs:
           FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
+      
+      - name: Test SSH access to Bedrock repo
+        run: ssh -T git@github.com
 
       - name: Add Trellis deploy key
         uses: shimataro/ssh-key-action@v2
