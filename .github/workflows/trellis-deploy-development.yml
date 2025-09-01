@@ -38,6 +38,10 @@ on:
         type: string
         default: latest
         required: false
+      USE_BEDROCK_KEY:
+        type: boolean
+        default: false
+        required: false
     secrets:
       REPO_PAT:
         required: true
@@ -110,11 +114,15 @@ jobs:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
           known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
 
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
+
       - name: Add optional Bedrock deploy key
-        if: ${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY != '' }}
+        if: ${{ inputs.USE_BEDROCK_KEY }}
         uses: webfactory/ssh-agent@v0.9.1
         with:
-          ssh-private-key: ${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}
+          ssh-private-key: "${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}"
 
       - uses: roots/setup-trellis-cli@v1.3.1
         with:
