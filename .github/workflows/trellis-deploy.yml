@@ -1,4 +1,3 @@
-# .github/workflows/trellis-deploy.yml
 name: deploy
 
 on:
@@ -22,22 +21,6 @@ on:
       TRELLIS_REPOSITORY:
         type: string
         required: true
-      TRELLIS_CLI_AUTO_INIT:
-        type: boolean
-        default: true
-        required: false
-      TRELLIS_CLI_CACHE_VIRTUALENV:
-        type: boolean
-        default: true
-        required: false
-      TRELLIS_CLI_GALAXY_INSTALL:
-        type: boolean
-        default: true
-        required: false
-      TRELLIS_CLI_VERSION:
-        type: string
-        default: latest
-        required: false
     secrets:
       REPO_PAT:
         required: true
@@ -56,9 +39,7 @@ on:
 
 jobs:
   deploy:
-    name: "${{ inputs.TRELLIS_ENVIRONMENT }}"
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Trellis
         uses: actions/checkout@v4
@@ -68,62 +49,33 @@ jobs:
           token: "${{ secrets.REPO_PAT }}"
           ref: "${{ inputs.TRELLIS_ENVIRONMENT }}"
 
-      - name: Get environment IP address
+      - name: Get environment ZeroTier IP
         run: |
-          HOST_IP="$(grep -Po 'ansible_host=((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_host=//g')"
-          if [ -z "${HOST_IP}" ]; then
-            echo 'HOST_IP not found.'
-            exit 1
-          fi
+          HOST_IP="$(grep -Po 'ansible_host=\K.*' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" )"
           echo "HOST_IP=${HOST_IP}" >> "${GITHUB_ENV}"
         working-directory: trellis
 
-      - name: Install ZeroTier
+      - name: Join ZeroTier Network
         uses: zerotier/github-action@v1.0.3
         with:
           network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
-      - name: Route environment traffic through ZeroTier
+      - name: Route traffic through ZeroTier
         run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
 
-      - name: Verify ZeroTier membership
+      - name: Test connectivity to VPS
         run: |
-          OUT=$(sudo zerotier-cli listnetworks -j)
-          STATUS=$(echo "$OUT" | jq -r '.[0].status')
-          if [ "$STATUS" != "OK" ]; then
-            echo "Runner not connected to ZeroTier!"
+          echo "Testing connection to ${HOST_IP}..."
+          if ! ping -c 1 -W 2 ${HOST_IP}; then
+            echo "❌ Cannot reach VPS over ZeroTier!"
             exit 1
+          else
+            echo "✅ VPS reachable over ZeroTier"
           fi
 
-      - name: Test connectivity to jump host
-        run: |
-          if ! ping -c 1 -W 2 192.168.196.201; then
-            echo "Jump host unreachable!"
-            exit 1
-          fi
-
-      - name: Test connectivity to target host
-        run: |
-          if ! ping -c 1 -W 2 35.246.17.50; then
-            echo "Target host unreachable!"
-            exit 1
-          fi
-
-      - name: Checkout Bedrock
-        uses: actions/checkout@v4
-        with:
-          path: bedrock
-
-      - name: Setup Node ${{ inputs.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        if: "${{ inputs.THEME_NAME != '' }}"
-        with:
-          node-version: "${{ inputs.NODE_VERSION }}"
-          cache: yarn
-          cache-dependency-path: bedrock/web/app/themes/${{ inputs.THEME_NAME }}/yarn.lock
-
-      - uses: shimataro/ssh-key-action@v2
+      - name: Setup SSH key
+        uses: shimataro/ssh-key-action@v2
         with:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
           known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
@@ -135,10 +87,10 @@ jobs:
       - uses: roots/setup-trellis-cli@v1.3.1
         with:
           ansible-vault-password: "${{ secrets.ANSIBLE_VAULT_PASSWORD }}"
-          auto-init: "${{ inputs.TRELLIS_CLI_AUTO_INIT }}"
-          cache-virtualenv: "${{ inputs.TRELLIS_CLI_CACHE_VIRTUALENV }}"
-          galaxy-install: "${{ inputs.TRELLIS_CLI_GALAXY_INSTALL }}"
-          version: "${{ inputs.TRELLIS_CLI_VERSION }}"
+          auto-init: true
+          cache-virtualenv: true
+          galaxy-install: true
+          version: latest
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Deploy
