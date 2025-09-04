@@ -111,7 +111,13 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           touch ~/.ssh/known_hosts
-          ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" || true
+
+          # Remove host entry only if it exists
+          if grep -q "\[${HOST_IP}\]:${KINSTA_PORT}" ~/.ssh/known_hosts; then
+            ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" || true
+          fi
+
+          # Add host key to known_hosts
           ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} >> ~/.ssh/known_hosts
 
       - name: Add Trellis deploy key
