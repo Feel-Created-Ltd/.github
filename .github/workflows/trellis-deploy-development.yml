@@ -89,6 +89,17 @@ jobs:
           echo "HOST_IP=${HOST_IP}" >> "${GITHUB_ENV}"
         working-directory: trellis
 
+       # Extract host port from Trellis hosts file
+      - name: Get environment Port address
+        run: |
+          KINSTA_PORT="$(grep -Eo 'ansible_port=[0-9]+' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_port=//g')"
+          if [ -z "${KINSTA_PORT}" ]; then
+            echo 'KINSTA_PORT not found.'
+            exit 1
+          fi
+          echo "KINSTA_PORT=${KINSTA_PORT}" >> "${GITHUB_ENV}"
+        working-directory: trellis
+
       # Checkout Bedrock repository
       - name: Checkout Bedrock
         uses: actions/checkout@v4
@@ -107,6 +118,15 @@ jobs:
           FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
+
+       # Update SSH known_hosts for Kinsta
+      - name: Update SSH known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          # Remove any old fingerprints to avoid "REMOTE HOST IDENTIFICATION HAS CHANGED!"
+          ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" || true
+          # Add the latest fingerprint
+          ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} > ~/.ssh/known_hosts
 
   env:
     HOST_IP: ${{ env.HOST_IP }}
