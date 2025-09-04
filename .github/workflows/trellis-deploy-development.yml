@@ -111,12 +111,14 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           touch ~/.ssh/known_hosts
-
-          # Remove old host entry (ignore error)
-          ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" 2>/dev/null || true
-
-          # Add host key
-          ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} >> ~/.ssh/known_hosts 2>/dev/null
+      
+          # Remove old host entry if it exists
+          if grep -q "\[${HOST_IP}\]:${KINSTA_PORT}" ~/.ssh/known_hosts; then
+            ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" || true
+          fi
+      
+          # Add host key; ignore errors but continue
+          ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} >> ~/.ssh/known_hosts 2>/dev/null || true
         env:
           HOST_IP: ${{ env.HOST_IP }}
           KINSTA_PORT: ${{ env.KINSTA_PORT }}
