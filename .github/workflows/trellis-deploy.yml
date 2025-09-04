@@ -99,16 +99,6 @@ jobs:
           fi
           echo "✅ Runner connected to ZeroTier: $ADDR"
 
-      - name: Test connectivity to Kinsta
-        run: |
-          echo "Testing target host ${HOST_IP}..."
-          if ! ping -c 1 -W 2 $HOST_IP; then
-            echo "❌ Target host unreachable!"
-            exit 1
-          else
-            echo "✅ Target host reachable"
-          fi
-
       - name: Checkout Bedrock
         uses: actions/checkout@v4
         with:
