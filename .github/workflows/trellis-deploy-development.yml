@@ -62,9 +62,6 @@ jobs:
       group: "${{ github.workflow }}-${{ github.ref_name }}"
       cancel-in-progress: false
     if: github.sha != vars.LAST_DEPLOY && github.actor != 'kodiakhq[bot]' && github.actor != 'dependabot[bot]' && !contains(github.event.head_commit.message, '[cd skip]')
-    env:
-      HOST_IP: ${{ env.HOST_IP }}
-      KINSTA_PORT: ${{ env.KINSTA_PORT }}
     steps:
       - name: Checkout Trellis
         uses: actions/checkout@v4
