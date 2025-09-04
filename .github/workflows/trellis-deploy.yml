@@ -93,6 +93,13 @@ jobs:
           network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
+      - name: Test connectivity to Kinsta
+        run: |
+          echo "Pinging Kinsta..."
+          ping -c 3 35.246.17.50
+          echo "Checking SSH port..."
+          nc -vz 35.246.17.50 56751
+
       - name: Route environment traffic through ZeroTier
         run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
 
