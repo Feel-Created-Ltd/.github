@@ -139,6 +139,13 @@ jobs:
       - name: Show routing table
         run: ip route
 
+      # --- Add these two test steps ---
+      - name: Ping test to VPS over ZeroTier
+        run: ping -c 4 192.168.196.201
+
+      - name: Test SSH connection to VPS
+        run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/kinsta_vps_key root@192.168.196.201 "echo Connection OK"
+
       - name: Prepare SSH known_hosts
         run: |
           mkdir -p ~/.ssh
