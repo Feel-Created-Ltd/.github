@@ -1,5 +1,4 @@
-# .github/workflows/trellis-deploy.yml
-name: Trellis Deploy
+name: deploy
 
 on:
   workflow_call:
@@ -68,15 +67,15 @@ jobs:
           token: "${{ secrets.REPO_PAT }}"
           ref: "${{ inputs.TRELLIS_ENVIRONMENT }}"
 
-      - name: Get target host IP
-        working-directory: trellis
+      - name: Get environment IP address
         run: |
-          HOST_IP=$(grep 'kinsta_staging' hosts/${{ inputs.TRELLIS_ENVIRONMENT }} | awk '{for(i=1;i<=NF;i++) if($i ~ /^ansible_host=/){split($i,a,"="); print a[2]}}')
+          HOST_IP=$(grep -Po 'ansible_host=\K.*' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}")
           if [ -z "$HOST_IP" ]; then
             echo "HOST_IP not found"
             exit 1
           fi
-          echo "HOST_IP=$HOST_IP" >> $GITHUB_ENV
+          echo "HOST_IP=$HOST_IP" >> "$GITHUB_ENV"
+        working-directory: trellis
 
       - name: Install ZeroTier
         uses: zerotier/github-action@v1.0.3
@@ -89,31 +88,26 @@ jobs:
 
       - name: Verify ZeroTier membership
         run: |
+          echo "Checking ZeroTier membership..."
           OUT=$(sudo zerotier-cli listnetworks -j)
           echo "$OUT" | jq .
           STATUS=$(echo "$OUT" | jq -r '.[0].status')
           ADDR=$(echo "$OUT" | jq -r '.[0].assignedAddresses[0]')
           if [ "$STATUS" != "OK" ]; then
-            echo "❌ Runner is not properly connected to ZeroTier!"
+            echo "❌ Runner not connected to ZeroTier!"
             exit 1
           fi
-          echo "✅ Runner is connected to ZeroTier with address $ADDR"
+          echo "✅ Runner connected to ZeroTier: $ADDR"
 
-      - name: Test connectivity
+      - name: Test connectivity to Kinsta
         run: |
-          echo "Testing jump host 192.168.196.201..."
-          if ! ping -c 1 -W 2 192.168.196.201; then
-            echo "❌ Jump host unreachable!"
-            exit 1
-          fi
-          echo "✅ Jump host reachable"
-          
-          echo "Testing target host $HOST_IP..."
-          if ! ping -c 1 -W 2 "$HOST_IP"; then
+          echo "Testing target host ${HOST_IP}..."
+          if ! ping -c 1 -W 2 $HOST_IP; then
             echo "❌ Target host unreachable!"
             exit 1
+          else
+            echo "✅ Target host reachable"
           fi
-          echo "✅ Target host reachable"
 
       - name: Checkout Bedrock
         uses: actions/checkout@v4
@@ -128,7 +122,8 @@ jobs:
           cache: yarn
           cache-dependency-path: bedrock/web/app/themes/${{ inputs.THEME_NAME }}/yarn.lock
 
-      - uses: shimataro/ssh-key-action@v2
+      - name: Setup SSH
+        uses: shimataro/ssh-key-action@v2
         with:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
           known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
