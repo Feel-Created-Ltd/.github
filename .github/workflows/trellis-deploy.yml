@@ -90,10 +90,12 @@ jobs:
 
       - name: Route environment traffic through ZeroTier
         run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
-
+      
       - name: Verify ZeroTier membership
         run: |
+          echo "Checking ZeroTier membership..."
           OUT=$(sudo zerotier-cli listnetworks -j)
+          echo "$OUT" | jq .
           STATUS=$(echo "$OUT" | jq -r '.[0].status')
           ADDR=$(echo "$OUT" | jq -r '.[0].assignedAddresses[0]')
           if [ "$STATUS" != "OK" ]; then
@@ -101,9 +103,10 @@ jobs:
             exit 1
           fi
           echo "✅ Runner is connected to ZeroTier with address $ADDR"
-
+          
       - name: Test connectivity to VPS over ZeroTier
         run: |
+          echo "Testing connectivity to VPS..."
           if ! ping -c 1 -W 2 192.168.196.201; then
             echo "❌ Cannot reach VPS over ZeroTier!"
             exit 1
@@ -127,14 +130,6 @@ jobs:
           FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
-
-      # TEMPORARY: Output known_hosts so you can copy to secret
-      - name: Output SSH host keys for secret
-        run: |
-          echo "=== Jump host key ==="
-          ssh-keyscan 192.168.196.201
-          echo "=== Target host key ==="
-          ssh-keyscan -p 56751 35.246.17.50
 
       - uses: shimataro/ssh-key-action@v2
         with:
