@@ -89,12 +89,28 @@ jobs:
 
       - name: Route environment traffic through ZeroTier
         run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
-
-      - name: Test ZeroTier connection
+      
+      - name: Verify ZeroTier membership
         run: |
-          if ! ping -c 1 -W 2 ${{ env.HOST_IP }}; then
-            echo "Cannot ping Kinsta IP over ZeroTier!"
+          echo "Checking ZeroTier membership..."
+          sudo zerotier-cli listnetworks -j | jq .
+          if ! sudo zerotier-cli listnetworks -j | grep -q '"status":"OK"'; then
+            echo "❌ Runner is not properly connected to ZeroTier!"
             exit 1
+          else
+            echo "✅ Runner is connected to ZeroTier"
+          fi
+
+      - name: Check route to Kinsta via VPS
+        run: |
+          echo "Testing route to Kinsta through VPS..."
+          ip route
+          echo "Trying TCP connection to Kinsta SSH port via routed path..."
+          if ! timeout 5 bash -c "cat < /dev/null > /dev/tcp/${HOST_IP}/${KINSTA_PORT}"; then
+            echo "❌ Cannot reach Kinsta over ZeroTier route!"
+            exit 1
+          else
+            echo "✅ Connection to Kinsta port ${KINSTA_PORT} works over ZeroTier"
           fi
 
       - name: Test SSH to Kinsta via jump host
