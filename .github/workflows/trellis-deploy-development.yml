@@ -53,6 +53,12 @@ on:
         required: false
       ITINERIS_NPM_AUTH_TOKEN:
         required: false
+      ZEROTIER_CENTRAL_TOKEN:
+        required: true
+      ZEROTIER_GATEWAY_IP:
+        required: true
+      ZEROTIER_NETWORK_ID:
+        required: true
 
 jobs:
   deploy:
@@ -107,17 +113,23 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
+      - name: Install ZeroTier
+        uses: zerotier/github-action@v1.0.3
+        with:
+          network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
+          auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
+
+      - name: Route environment traffic through ZeroTier
+        run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
+
       - name: Prepare SSH known_hosts
         run: |
           mkdir -p ~/.ssh
           touch ~/.ssh/known_hosts
       
-          # Remove old host entry if it exists
           if grep -q "\[${HOST_IP}\]:${KINSTA_PORT}" ~/.ssh/known_hosts; then
             ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" || true
           fi
-      
-          # Add host key; ignore errors but continue
           ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} >> ~/.ssh/known_hosts 2>/dev/null || true
         env:
           HOST_IP: ${{ env.HOST_IP }}
