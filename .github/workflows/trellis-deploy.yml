@@ -84,7 +84,7 @@ jobs:
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
       - name: Route environment traffic through ZeroTier
-        run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
+        run: sudo ip route add "192.168.196.90/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
 
       - name: Verify ZeroTier membership
         run: |
