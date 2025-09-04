@@ -111,14 +111,16 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           touch ~/.ssh/known_hosts
-
-          # Remove host entry only if it exists
-          if grep -q "\[${HOST_IP}\]:${KINSTA_PORT}" ~/.ssh/known_hosts; then
-            ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" || true
-          fi
-
+      
+          # Remove host entry (ignore failure if it doesn't exist)
+          ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" 2>/dev/null || true
+      
           # Add host key to known_hosts
-          ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} >> ~/.ssh/known_hosts
+          ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} >> ~/.ssh/known_hosts 2>/dev/null
+          
+  env:
+    HOST_IP: ${{ env.HOST_IP }}
+    KINSTA_PORT: ${{ env.KINSTA_PORT }}
 
       - name: Add Trellis deploy key
         uses: shimataro/ssh-key-action@v2
