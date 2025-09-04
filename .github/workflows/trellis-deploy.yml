@@ -75,7 +75,7 @@ jobs:
           repository: "${{ inputs.TRELLIS_REPOSITORY }}"
           path: trellis
           token: "${{ secrets.REPO_PAT }}"
-          ref: "${{ inputs.TRELLIS_REPOSITORY }}"
+          ref: "${{ inputs.TRELLIS_ENVIRONMENT }}"
 
       - name: Get environment IP address
         run: |
