@@ -1,3 +1,4 @@
+# .github/workflows/trellis-deploy-development.yml
 name: deploy
 
 on:
@@ -92,9 +93,7 @@ jobs:
 
       - name: Verify ZeroTier membership
         run: |
-          echo "Checking ZeroTier membership..."
           OUT=$(sudo zerotier-cli listnetworks -j)
-          echo "$OUT" | jq .
           STATUS=$(echo "$OUT" | jq -r '.[0].status')
           ADDR=$(echo "$OUT" | jq -r '.[0].assignedAddresses[0]')
           if [ "$STATUS" != "OK" ]; then
@@ -105,14 +104,13 @@ jobs:
 
       - name: Test connectivity to VPS over ZeroTier
         run: |
-          echo "Testing connectivity to VPS..."
           if ! ping -c 1 -W 2 192.168.196.201; then
             echo "❌ Cannot reach VPS over ZeroTier!"
             exit 1
           else
             echo "✅ VPS reachable over ZeroTier"
           fi
-          
+
       - name: Checkout Bedrock
         uses: actions/checkout@v4
         with:
@@ -130,8 +128,15 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
-      - name: Setup SSH
-        uses: shimataro/ssh-key-action@v2
+      # TEMPORARY: Output known_hosts so you can copy to secret
+      - name: Output SSH host keys for secret
+        run: |
+          echo "=== Jump host key ==="
+          ssh-keyscan 192.168.196.201
+          echo "=== Target host key ==="
+          ssh-keyscan -p 56751 35.246.17.50
+
+      - uses: shimataro/ssh-key-action@v2
         with:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
           known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
