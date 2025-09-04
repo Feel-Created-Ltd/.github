@@ -1,3 +1,4 @@
+# .github/workflows/trellis-deploy.yml
 name: deploy
 
 on:
@@ -48,9 +49,9 @@ on:
         required: true
       ZEROTIER_CENTRAL_TOKEN:
         required: true
-      ZEROTIER_GATEWAY_IP:
-        required: true
       ZEROTIER_NETWORK_ID:
+        required: true
+      ZEROTIER_GATEWAY_IP:
         required: true
 
 jobs:
@@ -59,6 +60,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout Trellis
       - name: Checkout Trellis
         uses: actions/checkout@v4
         with:
@@ -67,7 +69,8 @@ jobs:
           token: "${{ secrets.REPO_PAT }}"
           ref: "${{ inputs.TRELLIS_ENVIRONMENT }}"
 
-      - name: Get environment IP address
+      # Get target host IP from hosts file
+      - name: Get target host IP
         run: |
           HOST_IP=$(grep -Po 'ansible_host=\K\S+' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}")
           if [ -z "$HOST_IP" ]; then
@@ -77,33 +80,48 @@ jobs:
           echo "HOST_IP=$HOST_IP" >> "$GITHUB_ENV"
         working-directory: trellis
 
+      # Install and join ZeroTier
       - name: Install ZeroTier
         uses: zerotier/github-action@v1.0.3
         with:
           network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
-      - name: Route environment traffic through ZeroTier
-        run: sudo ip route add "192.168.196.90/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
-
-      - name: Verify ZeroTier membership
+      # Verify ZeroTier connectivity
+      - name: Verify ZeroTier IP
         run: |
-          echo "Checking ZeroTier membership..."
-          OUT=$(sudo zerotier-cli listnetworks -j)
-          echo "$OUT" | jq .
-          STATUS=$(echo "$OUT" | jq -r '.[0].status')
-          ADDR=$(echo "$OUT" | jq -r '.[0].assignedAddresses[0]')
-          if [ "$STATUS" != "OK" ]; then
-            echo "❌ Runner not connected to ZeroTier!"
+          ZT_IP=$(ip -4 addr show | grep -oP '192\.168\.196\.\d+')
+          if [ -z "$ZT_IP" ]; then
+            echo "❌ Runner not on ZeroTier network!"
             exit 1
           fi
-          echo "✅ Runner connected to ZeroTier: $ADDR"
+          echo "✅ Runner ZeroTier IP: $ZT_IP"
 
+      # Test connectivity to jump host
+      - name: Ping jump host
+        run: |
+          if ! ping -c 3 192.168.196.90; then
+            echo "❌ Cannot reach jump host!"
+            exit 1
+          fi
+          echo "✅ Jump host reachable"
+
+      # Test connectivity to Kinsta through jump host
+      - name: Test SSH to target via jump host
+        run: |
+          if ! ssh -o BatchMode=yes -J chiuni@192.168.196.90 chiuni@$HOST_IP -p 56751 "echo connected"; then
+            echo "❌ Cannot reach Kinsta server via jump host!"
+            exit 1
+          fi
+          echo "✅ Kinsta server reachable via jump host"
+
+      # Checkout Bedrock
       - name: Checkout Bedrock
         uses: actions/checkout@v4
         with:
           path: bedrock
 
+      # Setup Node
       - name: Setup Node ${{ inputs.NODE_VERSION }}
         uses: actions/setup-node@v4
         if: "${{ inputs.THEME_NAME != '' }}"
@@ -112,6 +130,7 @@ jobs:
           cache: yarn
           cache-dependency-path: bedrock/web/app/themes/${{ inputs.THEME_NAME }}/yarn.lock
 
+      # Setup SSH for Trellis
       - name: Setup SSH
         uses: shimataro/ssh-key-action@v2
         with:
@@ -122,6 +141,7 @@ jobs:
         with:
           ssh-private-key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
 
+      # Setup Trellis CLI
       - uses: roots/setup-trellis-cli@v1.3.1
         with:
           ansible-vault-password: "${{ secrets.ANSIBLE_VAULT_PASSWORD }}"
@@ -131,6 +151,7 @@ jobs:
           version: "${{ inputs.TRELLIS_CLI_VERSION }}"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Deploy
       - name: Deploy
         working-directory: trellis
         run: trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
