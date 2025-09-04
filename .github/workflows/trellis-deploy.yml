@@ -113,14 +113,6 @@ jobs:
             echo "✅ VPS reachable over ZeroTier"
           fi
 
-      - name: Test SSH to Kinsta via jump host
-        run: |
-          echo "Testing SSH connectivity to Kinsta via jump host..."
-          if ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -J root@${{ secrets.ZEROTIER_GATEWAY_IP }} chiuni@${{ env.HOST_IP }} -p 56751 "echo Connection OK"; then
-            echo "Cannot reach Kinsta via VPS jump host!"
-            exit 1
-          fi
-
       - name: Checkout Bedrock
         uses: actions/checkout@v4
         with:
