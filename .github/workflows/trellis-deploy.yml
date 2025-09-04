@@ -81,6 +81,15 @@ jobs:
           echo "KINSTA_PORT=$KINSTA_PORT" >> $GITHUB_ENV
         working-directory: trellis
 
+      - name: Install ZeroTier
+        uses: zerotier/github-action@v1.0.3
+        with:
+          network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
+          auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
+
+      - name: Route Kinsta traffic through ZeroTier
+        run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
+
       - name: Checkout Bedrock
         uses: actions/checkout@v4
         with:
@@ -98,24 +107,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
-      - name: Setup SSH for VPS
-        uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: "${{ secrets.VPS_SSH_PRIVATE_KEY }}"
-
-      - name: Install ZeroTier on VPS and join network
-        run: |
-          ssh -o StrictHostKeyChecking=no root@${{ env.HOST_IP }} <<'EOF'
-            curl -s https://install.zerotier.com | bash
-            zerotier-cli join $ZEROTIER_NETWORK_ID
-            ip route add ${HOST_IP}/32 via $ZEROTIER_GATEWAY_IP
-          EOF
-        env:
-          HOST_IP: ${{ env.HOST_IP }}
-          ZEROTIER_NETWORK_ID: ${{ secrets.ZEROTIER_NETWORK_ID }}
-          ZEROTIER_GATEWAY_IP: ${{ secrets.ZEROTIER_GATEWAY_IP }}
-
-      - name: Setup SSH for Trellis deploy key
+      - name: Add Trellis deploy key
         uses: shimataro/ssh-key-action@v2
         with:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
@@ -134,15 +126,12 @@ jobs:
           version: "${{ inputs.TRELLIS_CLI_VERSION }}"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Deploy via Trellis on VPS
+      - name: Deploy via Trellis
+        working-directory: trellis
         run: |
-          ssh -o StrictHostKeyChecking=no root@${{ env.HOST_IP }} <<'EOF'
-            export KINSTA_PHP_PREPEND=''
-            cd trellis
-            trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
-          EOF
+          export KINSTA_PHP_PREPEND=''
+          trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
         env:
-          HOST_IP: ${{ env.HOST_IP }}
           FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
