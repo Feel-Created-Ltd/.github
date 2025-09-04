@@ -69,7 +69,7 @@ jobs:
 
       - name: Get environment IP address
         run: |
-          HOST_IP=$(grep -Po 'ansible_host=\K.*' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}")
+          HOST_IP=$(grep -Po 'ansible_host=\K\S+' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}")
           if [ -z "$HOST_IP" ]; then
             echo "HOST_IP not found"
             exit 1
