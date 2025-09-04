@@ -49,8 +49,6 @@ on:
         required: true
       ZEROTIER_CENTRAL_TOKEN:
         required: true
-      ZEROTIER_GATEWAY_IP:
-        required: true
       ZEROTIER_NETWORK_ID:
         required: true
 
@@ -100,7 +98,7 @@ jobs:
       - name: Test connectivity to Kinsta
         run: |
           echo "Pinging Kinsta ($HOST_IP)..."
-          if ! ping -c 1 -W 2 $HOST_IP; then
+          if ! ping -c 3 -W 2 $HOST_IP; then
             echo "❌ Kinsta unreachable!"
             exit 1
           fi
