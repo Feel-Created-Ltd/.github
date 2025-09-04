@@ -124,6 +124,10 @@ jobs:
           network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
+      - name: Join ZeroTier network
+        run: |
+          sudo zerotier-cli join ${{ secrets.ZEROTIER_NETWORK_ID }}
+
       - name: Verify ZeroTier network
         run: |
           sudo zerotier-cli info
