@@ -131,16 +131,11 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
-      - name: Show SSH known_hosts for verification
-        working-directory: trellis
+      - name: Output known_hosts for checking
         run: |
-          echo "=== Jump host key ==="
-          ssh-keyscan 192.168.196.201
-          echo "=== Target host key ==="
-          ssh-keyscan -p 56751 35.246.17.50
-          # Optionally, if you use ZeroTier IP for SSH:
-          echo "=== ZeroTier host key ==="
-          ssh-keyscan 192.168.196.90
+              ssh-keyscan -p 56751 35.246.17.50
+              ssh-keyscan 192.168.196.90
+              ssh-keyscan 192.168.196.201
 
       - uses: shimataro/ssh-key-action@v2
         with:
