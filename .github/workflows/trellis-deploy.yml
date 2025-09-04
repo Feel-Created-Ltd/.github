@@ -93,24 +93,24 @@ jobs:
       - name: Verify ZeroTier membership
         run: |
           echo "Checking ZeroTier membership..."
-          sudo zerotier-cli listnetworks -j | jq .
-          if ! sudo zerotier-cli listnetworks -j | grep -q '"status":"OK"'; then
+          OUT=$(sudo zerotier-cli listnetworks -j)
+          echo "$OUT" | jq .
+          STATUS=$(echo "$OUT" | jq -r '.[0].status')
+          ADDR=$(echo "$OUT" | jq -r '.[0].assignedAddresses[0]')
+          if [ "$STATUS" != "OK" ]; then
             echo "❌ Runner is not properly connected to ZeroTier!"
             exit 1
-          else
-            echo "✅ Runner is connected to ZeroTier"
           fi
-
-      - name: Check route to Kinsta via VPS
+          echo "✅ Runner is connected to ZeroTier with address $ADDR"
+          
+      - name: Test connectivity to VPS over ZeroTier
         run: |
-          echo "Testing route to Kinsta through VPS..."
-          ip route
-          echo "Trying TCP connection to Kinsta SSH port via routed path..."
-          if ! timeout 5 bash -c "cat < /dev/null > /dev/tcp/${HOST_IP}/${KINSTA_PORT}"; then
-            echo "❌ Cannot reach Kinsta over ZeroTier route!"
+          echo "Testing connectivity to VPS..."
+          if ! ping -c 1 -W 2 192.168.196.201; then
+            echo "❌ Cannot reach VPS over ZeroTier!"
             exit 1
           else
-            echo "✅ Connection to Kinsta port ${KINSTA_PORT} works over ZeroTier"
+            echo "✅ VPS reachable over ZeroTier"
           fi
 
       - name: Test SSH to Kinsta via jump host
