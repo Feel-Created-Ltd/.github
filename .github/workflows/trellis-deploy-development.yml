@@ -59,6 +59,8 @@ on:
         required: true
       ZEROTIER_NETWORK_ID:
         required: true
+      VPS_SSH_PRIVATE_KEY:
+        required: true
 
 jobs:
   deploy:
@@ -69,6 +71,10 @@ jobs:
       cancel-in-progress: false
     if: github.sha != vars.LAST_DEPLOY && github.actor != 'kodiakhq[bot]' && github.actor != 'dependabot[bot]' && !contains(github.event.head_commit.message, '[cd skip]')
     steps:
+
+      # -------------------
+      # Checkout repositories
+      # -------------------
       - name: Checkout Trellis
         uses: actions/checkout@v4
         with:
@@ -76,6 +82,14 @@ jobs:
           path: trellis
           token: "${{ secrets.REPO_PAT }}"
 
+      - name: Checkout Bedrock
+        uses: actions/checkout@v4
+        with:
+          path: bedrock
+
+      # -------------------
+      # Detect environment IP & port
+      # -------------------
       - name: Get environment IP
         run: |
           HOST_IP=$(grep -Eo 'ansible_host=[0-9]{1,3}(\.[0-9]{1,3}){3}' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_host=//g')
@@ -101,11 +115,9 @@ jobs:
           echo "HOST_IP=$HOST_IP"
           echo "KINSTA_PORT=$KINSTA_PORT"
 
-      - name: Checkout Bedrock
-        uses: actions/checkout@v4
-        with:
-          path: bedrock
-
+      # -------------------
+      # Node setup for theme build
+      # -------------------
       - name: Setup Node ${{ inputs.NODE_VERSION }}
         uses: actions/setup-node@v4
         if: "${{ inputs.THEME_NAME != '' }}"
@@ -118,6 +130,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
+      # -------------------
+      # Join ZeroTier network
+      # -------------------
       - name: Install ZeroTier
         uses: zerotier/github-action@v1.0.3
         with:
@@ -125,8 +140,7 @@ jobs:
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
       - name: Join ZeroTier network
-        run: |
-          sudo zerotier-cli join ${{ secrets.ZEROTIER_NETWORK_ID }}
+        run: sudo zerotier-cli join ${{ secrets.ZEROTIER_NETWORK_ID }}
 
       - name: Verify ZeroTier network
         run: |
@@ -139,28 +153,21 @@ jobs:
       - name: Show routing table
         run: ip route
 
-      # --- Add these two test steps ---
-      - name: Ping test to VPS over ZeroTier
-        run: ping -c 4 192.168.196.201
+      # -------------------
+      # SSH into VPS using secret key
+      # -------------------
+      - name: Start SSH agent and add VPS key
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
 
-      - name: Test SSH connection to VPS
-        run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/kinsta_vps_key root@192.168.196.201 "echo Connection OK"
+      - name: Test VPS connectivity
+        run: ssh -o StrictHostKeyChecking=no root@${{ secrets.ZEROTIER_GATEWAY_IP }} "echo VPS Connection OK"
 
-      - name: Prepare SSH known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          touch ~/.ssh/known_hosts
-      
-          if grep -q "\[${HOST_IP}\]:${KINSTA_PORT}" ~/.ssh/known_hosts; then
-            ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" || true
-          fi
-          ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} >> ~/.ssh/known_hosts 2>/dev/null || true
-        env:
-          HOST_IP: ${{ env.HOST_IP }}
-          KINSTA_PORT: ${{ env.KINSTA_PORT }}
-
-      - name: Add Trellis deploy key
-        uses: shimataro/ssh-key-action@v2
+      # -------------------
+      # Trellis deployment
+      # -------------------
+      - uses: shimataro/ssh-key-action@v2
         with:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
           known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
