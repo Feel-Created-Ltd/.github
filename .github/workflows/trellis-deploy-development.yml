@@ -96,6 +96,11 @@ jobs:
           echo "KINSTA_PORT=$KINSTA_PORT" >> $GITHUB_ENV
         working-directory: trellis
 
+      - name: Debug environment IP & port
+        run: |
+          echo "HOST_IP=$HOST_IP"
+          echo "KINSTA_PORT=$KINSTA_PORT"
+
       - name: Checkout Bedrock
         uses: actions/checkout@v4
         with:
@@ -119,8 +124,16 @@ jobs:
           network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
+      - name: Verify ZeroTier network
+        run: |
+          sudo zerotier-cli info
+          sudo zerotier-cli listnetworks
+
       - name: Route environment traffic through ZeroTier
         run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
+
+      - name: Show routing table
+        run: ip route
 
       - name: Prepare SSH known_hosts
         run: |
