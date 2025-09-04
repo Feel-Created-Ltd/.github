@@ -63,12 +63,7 @@ jobs:
     name: "${{ inputs.TRELLIS_ENVIRONMENT }}"
     runs-on: ubuntu-latest
 
-    concurrency:
-      group: "${{ github.workflow }}-${{ github.ref_name }}"
-      cancel-in-progress: false
-
     steps:
-      # Checkout Trellis repo
       - name: Checkout Trellis
         uses: actions/checkout@v4
         with:
@@ -76,7 +71,6 @@ jobs:
           path: trellis
           token: "${{ secrets.REPO_PAT }}"
 
-      # Get environment IP
       - name: Get environment IP address
         run: |
           HOST_IP="$(grep -Po 'ansible_host=((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_host=//g')"
@@ -87,42 +81,35 @@ jobs:
           echo "HOST_IP=${HOST_IP}" >> "${GITHUB_ENV}"
         working-directory: trellis
 
-      # Join ZeroTier network
-      - name: Install and join ZeroTier
+      - name: Install ZeroTier
         uses: zerotier/github-action@v1.0.3
         with:
           network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
-      # Test connectivity to VPS on ZeroTier IP
-      - name: Test VPS connectivity
-        run: |
-          echo "Testing VPS reachability via ZeroTier..."
-          if ! ping -c 2 192.168.196.201; then
-            echo "VPS is not reachable via ZeroTier!"
-            exit 1
-          fi
-
-      # Route traffic through ZeroTier
       - name: Route environment traffic through ZeroTier
         run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
 
-      # Test connectivity to Kinsta through VPS jump host
-      - name: Test Kinsta connectivity
+      - name: Test ZeroTier connection
+        run: |
+          if ! ping -c 1 -W 2 ${{ env.HOST_IP }}; then
+            echo "Cannot ping Kinsta IP over ZeroTier!"
+            exit 1
+          fi
+
+      - name: Test SSH to Kinsta via jump host
         run: |
           echo "Testing SSH connectivity to Kinsta via jump host..."
-          if ! ssh -o StrictHostKeyChecking=no -J root@192.168.196.201 chiuni@${HOST_IP} -p 56751 "echo Connection OK"; then
+          if ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -J root@${{ secrets.ZEROTIER_GATEWAY_IP }} chiuni@${{ env.HOST_IP }} -p 56751 "echo Connection OK"; then
             echo "Cannot reach Kinsta via VPS jump host!"
             exit 1
           fi
 
-      # Checkout Bedrock repo
       - name: Checkout Bedrock
         uses: actions/checkout@v4
         with:
           path: bedrock
 
-      # Setup Node
       - name: Setup Node ${{ inputs.NODE_VERSION }}
         uses: actions/setup-node@v4
         if: "${{ inputs.THEME_NAME != '' }}"
@@ -135,7 +122,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
-      # Setup Trellis SSH keys
       - uses: shimataro/ssh-key-action@v2
         with:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
@@ -145,7 +131,6 @@ jobs:
         with:
           ssh-private-key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
 
-      # Setup Trellis CLI
       - uses: roots/setup-trellis-cli@v1.3.1
         with:
           ansible-vault-password: "${{ secrets.ANSIBLE_VAULT_PASSWORD }}"
@@ -155,7 +140,6 @@ jobs:
           version: "${{ inputs.TRELLIS_CLI_VERSION }}"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Deploy
       - name: Deploy
         working-directory: trellis
         run: trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
@@ -163,7 +147,6 @@ jobs:
           FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
-      # Cache commit hash
       - name: Cache deployed commit hash
         run: gh variable set LAST_DEPLOY --body='${{ github.sha }}'
         working-directory: bedrock
