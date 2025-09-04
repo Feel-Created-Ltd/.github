@@ -73,6 +73,7 @@ jobs:
           ref: "${{ inputs.TRELLIS_ENVIRONMENT }}"
 
       - name: Get environment IP address
+        working-directory: trellis
         run: |
           HOST_IP="$(grep -Po 'ansible_host=((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_host=//g')"
           if [ -z "${HOST_IP}" ]; then
@@ -80,7 +81,6 @@ jobs:
             exit 1
           fi
           echo "HOST_IP=${HOST_IP}" >> "${GITHUB_ENV}"
-        working-directory: trellis
 
       - name: Install ZeroTier
         uses: zerotier/github-action@v1.0.3
@@ -88,10 +88,7 @@ jobs:
           network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
-      - name: Route environment traffic through ZeroTier
-        run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
-      
-      - name: Verify ZeroTier membership
+      - name: Verify ZeroTier connectivity
         run: |
           echo "Checking ZeroTier membership..."
           OUT=$(sudo zerotier-cli listnetworks -j)
@@ -99,20 +96,31 @@ jobs:
           STATUS=$(echo "$OUT" | jq -r '.[0].status')
           ADDR=$(echo "$OUT" | jq -r '.[0].assignedAddresses[0]')
           if [ "$STATUS" != "OK" ]; then
-            echo "❌ Runner is not properly connected to ZeroTier!"
+            echo "❌ Runner is not connected to ZeroTier!"
             exit 1
           fi
-          echo "✅ Runner is connected to ZeroTier with address $ADDR"
-          
-      - name: Test connectivity to VPS over ZeroTier
+          echo "✅ Runner ZeroTier address: $ADDR"
+
+      - name: Route traffic to target host via ZeroTier
         run: |
-          echo "Testing connectivity to VPS..."
+          echo "Adding route to target host ${{ env.HOST_IP }} via ZeroTier gateway..."
+          sudo ip route add "${{ env.HOST_IP }}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}" || true
+
+      - name: Test connectivity to Jump and Target hosts
+        run: |
+          echo "Testing jump host 192.168.196.201..."
           if ! ping -c 1 -W 2 192.168.196.201; then
-            echo "❌ Cannot reach VPS over ZeroTier!"
+            echo "❌ Cannot reach jump host!"
             exit 1
-          else
-            echo "✅ VPS reachable over ZeroTier"
           fi
+          echo "✅ Jump host reachable"
+
+          echo "Testing target host ${{ env.HOST_IP }}..."
+          if ! ping -c 1 -W 2 ${{ env.HOST_IP }}; then
+            echo "❌ Cannot reach target host!"
+            exit 1
+          fi
+          echo "✅ Target host reachable"
 
       - name: Checkout Bedrock
         uses: actions/checkout@v4
@@ -157,7 +165,7 @@ jobs:
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
       - name: Cache deployed commit hash
-        run: gh variable set LAST_DEPLOY --body='${{ github.sha }}'
         working-directory: bedrock
+        run: gh variable set LAST_DEPLOY --body='${{ github.sha }}'
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_PAT }}
