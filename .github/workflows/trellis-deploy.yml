@@ -47,10 +47,6 @@ on:
         required: true
       ANSIBLE_VAULT_PASSWORD:
         required: true
-      FONTAWESOME_NPM_AUTH_TOKEN:
-        required: false
-      ITINERIS_NPM_AUTH_TOKEN:
-        required: false
       ZEROTIER_CENTRAL_TOKEN:
         required: true
       ZEROTIER_GATEWAY_IP:
@@ -73,7 +69,6 @@ jobs:
           ref: "${{ inputs.TRELLIS_ENVIRONMENT }}"
 
       - name: Get environment IP address
-        working-directory: trellis
         run: |
           HOST_IP="$(grep -Po 'ansible_host=((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_host=//g')"
           if [ -z "${HOST_IP}" ]; then
@@ -81,6 +76,7 @@ jobs:
             exit 1
           fi
           echo "HOST_IP=${HOST_IP}" >> "${GITHUB_ENV}"
+        working-directory: trellis
 
       - name: Install ZeroTier
         uses: zerotier/github-action@v1.0.3
@@ -88,7 +84,10 @@ jobs:
           network_id: ${{ secrets.ZEROTIER_NETWORK_ID }}
           auth_token: ${{ secrets.ZEROTIER_CENTRAL_TOKEN }}
 
-      - name: Verify ZeroTier connectivity
+      - name: Route environment traffic through ZeroTier
+        run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
+
+      - name: Verify ZeroTier membership
         run: |
           echo "Checking ZeroTier membership..."
           OUT=$(sudo zerotier-cli listnetworks -j)
@@ -96,31 +95,31 @@ jobs:
           STATUS=$(echo "$OUT" | jq -r '.[0].status')
           ADDR=$(echo "$OUT" | jq -r '.[0].assignedAddresses[0]')
           if [ "$STATUS" != "OK" ]; then
-            echo "❌ Runner is not connected to ZeroTier!"
+            echo "❌ Runner is not properly connected to ZeroTier!"
             exit 1
           fi
-          echo "✅ Runner ZeroTier address: $ADDR"
+          echo "✅ Runner is connected to ZeroTier with address $ADDR"
 
-      - name: Route traffic to target host via ZeroTier
+      - name: Test connectivity to Jump Host
         run: |
-          echo "Adding route to target host ${{ env.HOST_IP }} via ZeroTier gateway..."
-          sudo ip route add "${{ env.HOST_IP }}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}" || true
+          echo "Testing jump host connectivity..."
+          JUMP_HOST_IP="192.168.196.201"
+          if ! ping -c 1 -W 2 $JUMP_HOST_IP; then
+            echo "❌ Cannot reach jump host $JUMP_HOST_IP!"
+            exit 1
+          else
+            echo "✅ Jump host reachable"
+          fi
 
-      - name: Test connectivity to Jump and Target hosts
+      - name: Test connectivity to Target Host through Jump Host
         run: |
-          echo "Testing jump host 192.168.196.201..."
-          if ! ping -c 1 -W 2 192.168.196.201; then
-            echo "❌ Cannot reach jump host!"
+          echo "Testing target host ${HOST_IP}..."
+          if ! ssh -o BatchMode=yes -o ConnectTimeout=5 chiuni@$HOST_IP -p 56751 'echo Connected'; then
+            echo "❌ Cannot reach target host ${HOST_IP}!"
             exit 1
+          else
+            echo "✅ Target host reachable"
           fi
-          echo "✅ Jump host reachable"
-
-          echo "Testing target host ${{ env.HOST_IP }}..."
-          if ! ping -c 1 -W 2 ${{ env.HOST_IP }}; then
-            echo "❌ Cannot reach target host!"
-            exit 1
-          fi
-          echo "✅ Target host reachable"
 
       - name: Checkout Bedrock
         uses: actions/checkout@v4
@@ -134,10 +133,6 @@ jobs:
           node-version: "${{ inputs.NODE_VERSION }}"
           cache: yarn
           cache-dependency-path: bedrock/web/app/themes/${{ inputs.THEME_NAME }}/yarn.lock
-        env:
-          FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
       - uses: shimataro/ssh-key-action@v2
         with:
@@ -160,12 +155,9 @@ jobs:
       - name: Deploy
         working-directory: trellis
         run: trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
-        env:
-          FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
-          ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
       - name: Cache deployed commit hash
-        working-directory: bedrock
         run: gh variable set LAST_DEPLOY --body='${{ github.sha }}'
+        working-directory: bedrock
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_PAT }}
