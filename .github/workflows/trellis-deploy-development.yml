@@ -110,8 +110,9 @@ jobs:
       - name: Update SSH known_hosts
         run: |
           mkdir -p ~/.ssh
+          touch ~/.ssh/known_hosts
           ssh-keygen -R "[${HOST_IP}]:${KINSTA_PORT}" || true
-          ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} > ~/.ssh/known_hosts
+          ssh-keyscan -p ${KINSTA_PORT} ${HOST_IP} >> ~/.ssh/known_hosts
 
       - name: Add Trellis deploy key
         uses: shimataro/ssh-key-action@v2
