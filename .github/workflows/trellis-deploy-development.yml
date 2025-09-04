@@ -108,14 +108,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
-      # Update SSH known_hosts for Kinsta
-      - name: Update SSH known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          # Remove any old fingerprints to avoid "REMOTE HOST IDENTIFICATION HAS CHANGED!"
-          ssh-keygen -R "[35.246.17.50]:36431" || true
-          # Add the latest fingerprint
-          ssh-keyscan -p 36431 35.246.17.50 > ~/.ssh/known_hosts
+  env:
+    HOST_IP: ${{ env.HOST_IP }}
+    KINSTA_PORT: ${{ env.KINSTA_PORT }}
 
       # Add Trellis deploy key
       - name: Add Trellis deploy key
