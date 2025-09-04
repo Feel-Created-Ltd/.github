@@ -112,8 +112,10 @@ jobs:
       - name: Update SSH known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keygen -f ~/.ssh/known_hosts -R "[35.246.17.50]:36431" || true
-          ssh-keyscan -p 36431 35.246.17.50 >> ~/.ssh/known_hosts
+          # Remove any old fingerprints to avoid "REMOTE HOST IDENTIFICATION HAS CHANGED!"
+          ssh-keygen -R "[35.246.17.50]:36431" || true
+          # Add the latest fingerprint
+          ssh-keyscan -p 36431 35.246.17.50 > ~/.ssh/known_hosts
 
       # Add Trellis deploy key
       - name: Add Trellis deploy key
