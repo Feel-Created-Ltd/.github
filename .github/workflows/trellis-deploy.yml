@@ -69,7 +69,6 @@ jobs:
           ref: "${{ inputs.TRELLIS_ENVIRONMENT }}"
 
       - name: Get environment IP address
-        working-directory: trellis
         run: |
           HOST_IP="$(grep -Po 'ansible_host=((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_host=//g')"
           if [ -z "${HOST_IP}" ]; then
@@ -77,6 +76,7 @@ jobs:
             exit 1
           fi
           echo "HOST_IP=${HOST_IP}" >> "${GITHUB_ENV}"
+        working-directory: trellis
 
       - name: Install ZeroTier
         uses: zerotier/github-action@v1.0.3
@@ -91,21 +91,23 @@ jobs:
         run: |
           OUT=$(sudo zerotier-cli listnetworks -j)
           STATUS=$(echo "$OUT" | jq -r '.[0].status')
-          ADDR=$(echo "$OUT" | jq -r '.[0].assignedAddresses[0]')
           if [ "$STATUS" != "OK" ]; then
-            echo "❌ Runner is not properly connected to ZeroTier!"
+            echo "Runner not connected to ZeroTier!"
             exit 1
           fi
-          echo "✅ Runner connected to ZeroTier with address $ADDR"
 
-      - name: Test connectivity to VPS over ZeroTier
+      - name: Test connectivity to jump host
         run: |
-          echo "Testing target host ${HOST_IP}..."
-          if ! ping -c 1 -W 2 "${HOST_IP}"; then
-            echo "❌ Target host unreachable!"
+          if ! ping -c 1 -W 2 192.168.196.201; then
+            echo "Jump host unreachable!"
             exit 1
-          else
-            echo "✅ Target host reachable"
+          fi
+
+      - name: Test connectivity to target host
+        run: |
+          if ! ping -c 1 -W 2 35.246.17.50; then
+            echo "Target host unreachable!"
+            exit 1
           fi
 
       - name: Checkout Bedrock
@@ -121,8 +123,7 @@ jobs:
           cache: yarn
           cache-dependency-path: bedrock/web/app/themes/${{ inputs.THEME_NAME }}/yarn.lock
 
-      - name: Configure SSH for deployment
-        uses: shimataro/ssh-key-action@v2
+      - uses: shimataro/ssh-key-action@v2
         with:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
           known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
@@ -143,9 +144,3 @@ jobs:
       - name: Deploy
         working-directory: trellis
         run: trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
-
-      - name: Cache deployed commit hash
-        working-directory: bedrock
-        run: gh variable set LAST_DEPLOY --body='${{ github.sha }}'
-        env:
-          GITHUB_TOKEN: ${{ secrets.REPO_PAT }}
