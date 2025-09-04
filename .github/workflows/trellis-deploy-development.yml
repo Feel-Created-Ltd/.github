@@ -7,15 +7,12 @@ on:
       BEDROCK_DEPLOY_BRANCH:
         type: string
         default: "${{ github.ref_name }}"
-        required: false
       NODE_VERSION:
         type: number
         default: 14
-        required: false
       THEME_NAME:
         type: string
         default: ""
-        required: false
       TRELLIS_ENVIRONMENT:
         type: string
         required: true
@@ -25,56 +22,38 @@ on:
       TRELLIS_CLI_AUTO_INIT:
         type: boolean
         default: true
-        required: false
       TRELLIS_CLI_CACHE_VIRTUALENV:
         type: boolean
         default: true
-        required: false
       TRELLIS_CLI_GALAXY_INSTALL:
         type: boolean
         default: true
-        required: false
       TRELLIS_CLI_VERSION:
         type: string
         default: latest
-        required: false
     secrets:
       REPO_PAT:
         required: true
       TRELLIS_DEPLOY_SSH_PRIVATE_KEY:
         required: true
-      TRELLIS_BEDROCK_SSH_PRIVATE_KEY:
-        required: false
       TRELLIS_DEPLOY_SSH_KNOWN_HOSTS:
         required: true
       ANSIBLE_VAULT_PASSWORD:
         required: true
-      FONTAWESOME_NPM_AUTH_TOKEN:
-        required: false
-      ITINERIS_NPM_AUTH_TOKEN:
-        required: false
       ZEROTIER_CENTRAL_TOKEN:
         required: true
-      ZEROTIER_GATEWAY_IP:
-        required: true
       ZEROTIER_NETWORK_ID:
+        required: true
+      ZEROTIER_GATEWAY_IP:
         required: true
       VPS_SSH_PRIVATE_KEY:
         required: true
 
 jobs:
   deploy:
-    name: "${{ inputs.TRELLIS_ENVIRONMENT }}"
     runs-on: ubuntu-latest
-    concurrency:
-      group: "${{ github.workflow }}-${{ github.ref_name }}"
-      cancel-in-progress: false
-    if: github.sha != vars.LAST_DEPLOY && github.actor != 'kodiakhq[bot]' && github.actor != 'dependabot[bot]' && !contains(github.event.head_commit.message, '[cd skip]')
     steps:
 
-      # -------------------
-      # Checkout repositories
-      # -------------------
       - name: Checkout Trellis
         uses: actions/checkout@v4
         with:
@@ -82,31 +61,11 @@ jobs:
           path: trellis
           token: "${{ secrets.REPO_PAT }}"
 
-      - name: Checkout Bedrock
-        uses: actions/checkout@v4
-        with:
-          path: bedrock
-
-      # -------------------
-      # Detect environment IP & port
-      # -------------------
-      - name: Get environment IP
+      - name: Get environment IP & port
         run: |
           HOST_IP=$(grep -Eo 'ansible_host=[0-9]{1,3}(\.[0-9]{1,3}){3}' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_host=//g')
-          if [ -z "$HOST_IP" ]; then
-            echo 'HOST_IP not found.'
-            exit 1
-          fi
-          echo "HOST_IP=$HOST_IP" >> $GITHUB_ENV
-        working-directory: trellis
-
-      - name: Get environment port
-        run: |
           KINSTA_PORT=$(grep -Eo 'ansible_port=[0-9]+' "hosts/${{ inputs.TRELLIS_ENVIRONMENT }}" | sed 's/ansible_port=//g')
-          if [ -z "$KINSTA_PORT" ]; then
-            echo 'KINSTA_PORT not found.'
-            exit 1
-          fi
+          echo "HOST_IP=$HOST_IP" >> $GITHUB_ENV
           echo "KINSTA_PORT=$KINSTA_PORT" >> $GITHUB_ENV
         working-directory: trellis
 
@@ -115,24 +74,6 @@ jobs:
           echo "HOST_IP=$HOST_IP"
           echo "KINSTA_PORT=$KINSTA_PORT"
 
-      # -------------------
-      # Node setup for theme build
-      # -------------------
-      - name: Setup Node ${{ inputs.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        if: "${{ inputs.THEME_NAME != '' }}"
-        with:
-          node-version: "${{ inputs.NODE_VERSION }}"
-          cache: yarn
-          cache-dependency-path: bedrock/web/app/themes/${{ inputs.THEME_NAME }}/yarn.lock
-        env:
-          FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
-
-      # -------------------
-      # Join ZeroTier network
-      # -------------------
       - name: Install ZeroTier
         uses: zerotier/github-action@v1.0.3
         with:
@@ -153,21 +94,32 @@ jobs:
       - name: Show routing table
         run: ip route
 
-      # -------------------
-      # SSH into VPS using secret key
-      # -------------------
-      - name: Start SSH agent and add VPS key
-        uses: webfactory/ssh-agent@v0.9.1
+      - name: Save VPS SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_PRIVATE_KEY }}" > ~/.ssh/kinsta_vps_key
+          chmod 600 ~/.ssh/kinsta_vps_key
+
+      - name: Test SSH to VPS and Kinsta
+        run: |
+          echo "Testing connection via VPS to Kinsta..."
+          ssh -i ~/.ssh/kinsta_vps_key -o StrictHostKeyChecking=no -J root@${{ secrets.ZEROTIER_GATEWAY_IP }} -p $KINSTA_PORT chiuni@$HOST_IP "echo Connection OK"
+
+      - name: Checkout Bedrock
+        uses: actions/checkout@v4
         with:
-          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          path: bedrock
 
-      - name: Test VPS connectivity
-        run: ssh -o StrictHostKeyChecking=no root@${{ secrets.ZEROTIER_GATEWAY_IP }} "echo VPS Connection OK"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        if: "${{ inputs.THEME_NAME != '' }}"
+        with:
+          node-version: "${{ inputs.NODE_VERSION }}"
+          cache: yarn
+          cache-dependency-path: bedrock/web/app/themes/${{ inputs.THEME_NAME }}/yarn.lock
 
-      # -------------------
-      # Trellis deployment
-      # -------------------
-      - uses: shimataro/ssh-key-action@v2
+      - name: Add Trellis deploy key
+        uses: shimataro/ssh-key-action@v2
         with:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
           known_hosts: "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS }}"
@@ -175,16 +127,6 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
-
-      - name: Add optional Bedrock deploy key
-        run: |
-          if [ -n "${TRELLIS_BEDROCK_SSH_PRIVATE_KEY}" ]; then
-            echo "${TRELLIS_BEDROCK_SSH_PRIVATE_KEY}" > /tmp/bedrock_key
-            chmod 600 /tmp/bedrock_key
-            ssh-add /tmp/bedrock_key
-          fi
-        env:
-          TRELLIS_BEDROCK_SSH_PRIVATE_KEY: ${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}
 
       - uses: roots/setup-trellis-cli@v1.3.1
         with:
@@ -205,13 +147,3 @@ jobs:
         run: |
           export KINSTA_PHP_PREPEND=''
           trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
-        env:
-          FONTAWESOME_NPM_AUTH_TOKEN: "${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
-          ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
-          ALLOW_DEVELOPMENT_DEPLOYS: true
-
-      - name: Cache deployed commit hash
-        run: gh variable set LAST_DEPLOY --body='${{ github.sha }}'
-        working-directory: bedrock
-        env:
-          GITHUB_TOKEN: ${{ secrets.REPO_PAT }}
