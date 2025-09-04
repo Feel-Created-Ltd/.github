@@ -1,4 +1,4 @@
-# .github/workflows/trellis-deploy-development.yml
+# .github/workflows/trellis-deploy.yml
 name: deploy
 
 on:
@@ -46,8 +46,6 @@ on:
       TRELLIS_DEPLOY_SSH_KNOWN_HOSTS:
         required: true
       ANSIBLE_VAULT_PASSWORD:
-        required: true
-      VPS_SSH_PRIVATE_KEY:
         required: true
       ZEROTIER_NETWORK_ID:
         required: true
