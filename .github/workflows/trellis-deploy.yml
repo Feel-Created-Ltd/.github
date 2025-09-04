@@ -131,12 +131,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
-      - name: Output known_hosts for checking
-        run: |
-              ssh-keyscan -p 56751 35.246.17.50
-              ssh-keyscan 192.168.196.90
-              ssh-keyscan 192.168.196.201
-
       - uses: shimataro/ssh-key-action@v2
         with:
           key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
