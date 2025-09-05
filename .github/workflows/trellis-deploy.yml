@@ -125,6 +125,11 @@ jobs:
           version: "${{ inputs.TRELLIS_CLI_VERSION }}"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Write Bedrock SSH key
+        run: |
+          echo "${{ secrets.TRELLIS_BEDROCK_SSH_PRIVATE_KEY }}" > /tmp/bedrock_key
+          chmod 600 /tmp/bedrock_key
+
       - name: Deploy
         working-directory: trellis
         run: trellis deploy --verbose --branch="${{ inputs.BEDROCK_DEPLOY_BRANCH }}" "${{ inputs.TRELLIS_ENVIRONMENT }}"
