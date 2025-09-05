@@ -96,12 +96,10 @@ jobs:
       - name: Route environment traffic through ZeroTier
         run: sudo ip route add "${HOST_IP}/32" via "${{ secrets.ZEROTIER_GATEWAY_IP }}"
 
-      - name: Test connectivity to Kinsta
+      - name: Test connectivity to Kinsta SSH
         run: |
-          echo "Pinging Kinsta..."
-          ping -c 3 35.246.17.50
-          echo "Checking SSH port..."
-          nc -vz 35.246.17.50 56751
+          echo "Testing SSH connectivity to $HOST_IP:56751..."
+          nc -vz $HOST_IP 56751
 
       - name: Checkout Bedrock
         uses: actions/checkout@v4
