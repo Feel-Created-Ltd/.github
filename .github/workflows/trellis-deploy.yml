@@ -43,12 +43,6 @@ on:
         required: true
       TRELLIS_DEPLOY_SSH_PRIVATE_KEY:
         required: true
-      TRELLIS_DEPLOY_SSH_KNOWN_HOSTS_STAGING:
-        required: false
-      TRELLIS_DEPLOY_SSH_KNOWN_HOSTS_PRODUCTION:
-        required: false
-      TRELLIS_DEPLOY_SSH_KNOWN_HOSTS_DEV_REMOTE:
-        required: false
       ANSIBLE_VAULT_PASSWORD:
         required: true
       FONTAWESOME_NPM_AUTH_TOKEN:
@@ -110,28 +104,15 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ITINERIS_NPM_AUTH_TOKEN: ${{ secrets.ITINERIS_NPM_AUTH_TOKEN }}
 
-      - name: Set known_hosts secret for environment
-        id: knownhosts
+      - name: Configure SSH to auto-accept and update host keys
         run: |
-          if [[ "${{ inputs.TRELLIS_ENVIRONMENT }}" == "production" ]]; then
-            echo "KNOWN_HOSTS<<EOF" >> $GITHUB_ENV
-            echo "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS_PRODUCTION }}" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          elif [[ "${{ inputs.TRELLIS_ENVIRONMENT }}" == "staging" ]]; then
-            echo "KNOWN_HOSTS<<EOF" >> $GITHUB_ENV
-            echo "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS_STAGING }}" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          else
-            echo "KNOWN_HOSTS<<EOF" >> $GITHUB_ENV
-            echo "${{ secrets.TRELLIS_DEPLOY_SSH_KNOWN_HOSTS_DEV_REMOTE }}" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          fi
-
-      - name: Setup SSH
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: "${{ secrets.TRELLIS_DEPLOY_SSH_PRIVATE_KEY }}"
-          known_hosts: "${{ env.KNOWN_HOSTS }}"
+          mkdir -p ~/.ssh
+          cat >> ~/.ssh/config <<'EOF'
+Host *
+    StrictHostKeyChecking=accept-new
+    UpdateHostKeys yes
+EOF
+          chmod 600 ~/.ssh/config
 
       - uses: webfactory/ssh-agent@v0.9.1
         with:
