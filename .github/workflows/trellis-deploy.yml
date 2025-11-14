@@ -108,10 +108,10 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           cat >> ~/.ssh/config <<'EOF'
-Host *
-    StrictHostKeyChecking=accept-new
-    UpdateHostKeys yes
-EOF
+          Host *
+              StrictHostKeyChecking=accept-new
+              UpdateHostKeys yes
+          EOF
           chmod 600 ~/.ssh/config
 
       - uses: webfactory/ssh-agent@v0.9.1
